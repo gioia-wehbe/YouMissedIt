@@ -1,0 +1,191 @@
+use File::Spec;
+use Lingua::StopWords qw( getStopWords );
+use Lingua::Stem;
+use Data::Dumper;
+use Lucy::Simple;
+use File::Slurp;
+use strict;
+
+#LIST OF ALL PATHS AND DIRECTORIES
+my $home_gioia_desktop='/home/gioia/Desktop';#What changes from one PC to another...
+
+my $you_missed_it='/YouMissedIt';
+my $Emails='/Emails';
+my $output='/Output';
+my $stemmed='/Stemmed';
+my $index_folder='/Index';
+my $directory_of_emails=$home_gioia_desktop.$you_missed_it.$Emails;
+#print "directory of emails: ".$directory_of_emails."\n";
+my $directory_of_stemmed_files=$home_gioia_desktop.$you_missed_it.$output.$stemmed.'';
+#print "directory of stemmed files: ".$directory_of_stemmed_files."\n";
+my $directory_of_index_files=$home_gioia_desktop.$you_missed_it.$output.$index_folder.'';
+#print "directory of index files: ".$directory_of_index_files."\n";
+
+
+
+
+#Reading from emails
+#my @files = </home/gioia/Desktop/files/*>;#directory of emails
+#my @files = <$directory_of_emails.'/*'>;#directory of emails
+my @files = read_dir $directory_of_emails;
+#print "file: ".@files;
+foreach my $path (@files) #for every file in the directory
+{$path=$directory_of_emails."/".$path;
+(my $volume,my $directories,my $file)=File::Spec->splitpath($path);#get the file name
+my $content="";
+#print "the path is: ".$path;
+open (MYFILE, $path) or die "Error opening file - $!\n";#read the file content
+while (<MYFILE>) 
+{#print "READING FROM FILE!!!";
+chomp;
+$content=$content."$_\n";
+}
+#print "the content is: ".$content."\n\n\n\n\n\n\n\n\n\n";
+close (MYFILE); 
+my @words = split(" ",$content);#put the words in an array    
+my $stopwords = getStopWords('en');#get stop words
+@words = grep { !$stopwords->{$_} } @words;#remove all stop words from the array of all words
+#print "words: ".@words."\n\n";
+my $stemmer = Lingua::Stem->new(-locale => 'EN-UK');#create the object used for stemming
+$stemmer->stem_caching({ -level => 2 });#create a cash for stemming
+my $stem_array = $stemmer->stem(@words);#create an array of stemmed words
+#print "$_ " for (@$stem_array);
+#print "\n---------------------------------------------------------\n";
+#print join(", ", @words);
+#my $stemmed_files="/home/gioia/Desktop/Stemmed";#create directory to output stemmed files if it doesn't exist
+my $stemmed_files=$directory_of_stemmed_files;#create directory to output stemmed files if it doesn't exist
+if(-d $stemmed_files)
+{
+}
+else
+{
+mkdir($stemmed_files);
+}
+my $file_name=$stemmed_files."/".$file;
+#print "File name: ".$file_name."\n";
+#write the stemmed outputs to new files in the created directory (if same file name the file is not overridden)
+#if(-e $file_name)
+#{
+#}
+#else
+#{
+open (MYFILE, ">>$file_name");
+print MYFILE "$_ " for (@$stem_array);
+close (MYFILE); 
+#}
+
+}#end of iterations through all files in email directory
+
+
+
+
+
+
+
+#reading from stemmed files
+my %source_docs= ();#hash of files
+#my @files = <$directory_of_stemmed_files."/*">;#directory of stemmed files
+my @files = read_dir $directory_of_stemmed_files;#directory of stemmed files
+foreach my $path (@files) #for every file in the directory
+{$path=$directory_of_stemmed_files."/".$path;
+(my $volume,my $directories,my $file)=File::Spec->splitpath($path);#get the file name
+my $content="";
+open (MYFILE, $path);#read the file content
+while (<MYFILE>) 
+{
+chomp;
+$content=$content."$_\n";
+}
+close (MYFILE);
+print "CONTENT: ".$content."\n";
+#initialize hash of all docs
+$source_docs{$file}=$content ;
+}#end of iterations through all files in stemmed directory  
+
+
+#print Dumper(\%source_docs);
+print "directory_of_index_files: ".$directory_of_index_files."\n";
+#Creating an Index
+my $index = Lucy::Simple->new(
+        path     => $directory_of_index_files,
+        language => 'en'
+    );
+
+
+#add docs to the index
+    while ( my ( $title, $content ) = each %source_docs ) {
+        $index->add_doc({
+            title    => $title,
+            content  => $content,
+        });
+    }
+
+#my $wait=0;
+
+#while($wait!=5000)
+#{
+#$wait++;
+#print $wait."\n"
+#}
+
+#while(-d $directory_of_index_files."/locks")
+#{
+#print "waiting";
+#}
+
+#get list of unique terms from the index
+my %term_doc_freq = ();
+my $polyreader = Lucy::Index::IndexReader->open(index => $directory_of_index_files);
+print "index files: ".$directory_of_index_files."\n";
+my $seg_readers = $polyreader->seg_readers;#get all segReaders (lucy stores the documents into segments)
+for my $seg_reader (@$seg_readers) #for each segment reader...
+{#print "inside for\n";
+	my $lex_reader = $seg_reader->obtain('Lucy::Index::LexiconReader');#obtain the lexiconreader which reads the distinct term found in the 									   current segment
+	my $posting_list_reader = $seg_reader->obtain("Lucy::Index::PostingListReader");#obtain the Posting list reader which reads through all the 												documents that match a certain term
+	my $lexicon = $lex_reader->lexicon( field => 'content' );#list of lexicons (distinct terms) in the documents
+print $lexicon."\n";
+	while ( $lexicon->next ) #for every term in the list of lexicons
+	{
+		my $term =$lexicon->get_term;
+		print $term.": ";
+		my $posting_list = $posting_list_reader->posting_list(field => 'content',term  => $term);#obtain the posting list of the current term
+		my $doc_freq = $posting_list->get_doc_freq();#get the document frequency of this term (the number of documents where this term was found)
+		print "doc frequency:".$doc_freq."\n";
+		$term_doc_freq{$term}=$doc_freq;
+	}
+
+}
+#print Dumper(\%term_doc_freq);
+print "\n";
+#Selecting the features for classification
+my @features=();
+my $threshold=3;
+foreach my $term (keys %term_doc_freq)
+{
+	if($term_doc_freq{$term}>=$threshold)
+	{
+		push (@features, $term);
+  		print $term." is a feature\n";
+	}
+}
+#print Dumper(@features);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

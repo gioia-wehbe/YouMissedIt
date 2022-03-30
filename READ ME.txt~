@@ -1,0 +1,16 @@
+In order to classify new emails:
+
+1- Change the '$home_gioia_desktop' path in all the .pl files to the directory where you have extracted your 'YouMissedIt' folder.
+
+2- Convert them to .txt files.
+
+3- Put your .txt emails in the following directory: /YouMissedIt/TheTool/Emails.
+
+4- Open you terminal and go to the directory of the .pl files: 
+'cd .../YouMissedIt'
+
+5- Type the following command in your terminal to run the classification code: perl YouMissedIt.pl
+
+6- Your classified output will be found in: /YouMissedIt/TheTool/Output
+
+For any clarifications, do not hesitate to email me at: gioia.wehbe@lau.edu.lb
